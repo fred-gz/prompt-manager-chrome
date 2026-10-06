@@ -1,21 +1,50 @@
 # Prompt Manager Chrome Extension
 
-轻量 Chrome Manifest V3 Prompt 管理器。
+使用 Manifest V3 的轻量提示词管理插件，无需构建、账号或服务端。
 
 ## 功能
-- Prompt 新增 / 编辑 / 删除
-- Websites 域名启用 / 禁用 / 删除 / 新增
-- 指定网站显示悬浮圆形按钮
-- 点击按钮选择 Prompt 并插入当前输入框
-- Chrome Storage 本地保存
-- 默认支持 chatgpt.com、claude.ai、gemini.google.com
+
+- 点击工具栏插件图标，新增、编辑、删除 Prompt。
+- 点击「网站设置」打开网站设置，新增、删除域名，或启用 / 禁用网站。
+- 默认启用 `chatgpt.com`、`claude.ai`、`gemini.google.com`、`chat.deepseek.com`、`qianwen.com`（千问）、`qwen.ai`（Qwen），配置也适用于对应子域名。
+- 启用的网站默认在右下角显示蓝色圆形 ✦ 按钮，点击展开蓝色提示词面板。拖动圆形按钮可移动位置，按网站分别保存，刷新或下次访问时恢复；窗口缩小时自动限制在可见范围内。
+- 先点击页面输入框，再选择 Prompt，在光标位置插入；有选中文本时替换选区。不会自动发送消息。
+- 使用 `chrome.storage.local` 保存数据；网站开关和提示词列表变更会同步到已打开页面。
 
 ## 安装
-1. 解压 ZIP。
-2. 打开 `chrome://extensions/`。
-3. 开启右上角 Developer mode。
-4. 点击 Load unpacked。
-5. 选择解压后的 `prompt-manager-chrome` 文件夹。
 
-## 注意
-第一版使用通用 textarea/contenteditable 输入框适配器。不同 AI 网站如果后续修改 DOM，可在 `content/content.js` 的 `input()` / `insert()` 中增加站点专用适配。
+1. 下载或克隆本项目，若为 ZIP，先解压。
+2. 在 Chrome 地址栏打开 `chrome://extensions/`。
+3. 开启右上角「开发者模式」。
+4. 点击「加载已解压的扩展程序」。
+5. 选择本项目根目录（包含 `manifest.json` 的文件夹）。
+6. 在 Chrome 扩展菜单中固定 Prompt Manager，方便管理提示词。
+7. 刷新安装前已打开的网站页面，使内容脚本生效。
+
+修改插件代码后，在扩展管理页面点击插件的重新加载按钮，再刷新目标网页。
+
+## 使用
+
+1. 点击插件图标 → **新增提示词**，填写名称、内容后保存。
+2. 点击列表条目编辑，点击条目右侧 × 删除。
+3. 点击「网站设置」进入 **网站管理** 设置。支持填写域名或完整 HTTP / HTTPS URL；只保存域名，不区分路径、端口。
+4. 在启用的网站点击输入框，点击右下角 ✦，选择提示词。
+5. 再次点击 ✦、点击面板外部，或在面板内按 Escape 关闭列表。
+
+## 权限与数据
+
+`storage` 权限用于本机保存提示词与网站配置，不使用云同步，不向服务端上传数据。卸载插件会清除本地数据。
+
+内容脚本匹配 HTTP / HTTPS 页面，以便用户自行添加网站；仅在启用的域名上显示按钮。Chrome 可能因此提示插件可读取及更改网站数据。浏览器内部页面（如 `chrome://`）、Chrome 应用商店等受保护页面无法注入。
+
+## 兼容性与验证
+
+支持常规文本输入框、textarea 和 contenteditable 编辑器。优先使用最近聚焦的可编辑输入框；没有记录时使用第一个可见输入框。跨域 iframe、封闭 Shadow DOM 和特殊富文本编辑器可能需要额外适配。默认网站名单不意味着已对其最新线上编辑器完成实测。
+
+运行基础测试：
+
+```sh
+node --test tests/store.test.cjs
+```
+
+手动验收：加载插件后测试 Prompt 增删改、重启后数据保留、域名增删及即时开关；在目标网站验证光标插入、选区替换、多输入框选择及页面原有文本保留。
