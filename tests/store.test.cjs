@@ -55,3 +55,19 @@ test('narrows saved DeepSeek domains without restoring deletions or duplicating 
   assert.equal(deduplicated.websites[0].id, 'chat');
   assert.equal(deduplicated.websites[0].enabled, false);
 });
+
+test('callback-only storage works without structuredClone or randomUUID', async () => {
+  let saved;
+  const context = vm.createContext({URL, Uint8Array, crypto:{getRandomValues:array=>globalThis.crypto.getRandomValues(array)}, chrome:{runtime:{},storage:{local:{
+    get:(key, callback)=>queueMicrotask(()=>callback({store:saved})),
+    set:(value, callback)=>queueMicrotask(()=>{saved=JSON.parse(JSON.stringify(value.store));callback();})
+  }}}});
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../common.js'), 'utf8'), context);
+  const store = await context.getStore();
+  store.prompts.push({id:context.id(),name:'旧内核',content:'测试'});
+  await context.setStore(store);
+  assert.equal((await context.getStore()).prompts[0].content, '测试');
+  assert.match(store.prompts[0].id, /^[0-9a-f]{32}$/);
+  context.chrome.runtime.lastError = {message:'Storage unavailable'};
+  await assert.rejects(context.getStore(), /Storage unavailable/);
+});

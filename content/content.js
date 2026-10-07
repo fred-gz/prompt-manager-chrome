@@ -18,11 +18,27 @@
       if (current.rangeCount && el.contains(current.anchorNode)) range = current.getRangeAt(0).cloneRange();
     }
   }
-  ['focusin', 'keyup', 'pointerup', 'selectionchange'].forEach(type => document.addEventListener(type, remember));
+  let listening = false;
+  function outside(event) { if (!event.composedPath().includes(hostElement)) close(); }
+  function listen(enabled) {
+    if (listening === enabled) return;
+    listening = enabled;
+    const method = enabled ? 'addEventListener' : 'removeEventListener';
+    ['focusin', 'keyup', 'pointerup', 'selectionchange'].forEach(type => document[method](type, remember));
+    document[method]('pointerdown', outside);
+    window[method]('resize', layout);
+  }
+  function safeRender() {
+    try { render(); } catch (error) {
+      hostElement?.remove(); hostElement = null; listen(false);
+      console.warn('[Prompt Manager] 悬浮界面初始化失败', error);
+    }
+  }
 
   function render() {
     const enabled = store.websites.some(site => site.enabled && (location.hostname === site.domain || location.hostname.endsWith('.' + site.domain)));
-    if (!enabled) { hostElement?.remove(); hostElement = null; return; }
+    if (!enabled) { hostElement?.remove(); hostElement = null; listen(false); return; }
+    if (!document.body || !Element.prototype.attachShadow) return;
     if (!hostElement) {
       hostElement = document.createElement('div');
       hostElement.id = 'prompt-manager-extension';
@@ -34,13 +50,16 @@
         #panel{position:fixed;right:0;bottom:60px;width:min(320px,calc(100vw - 40px));max-height: min(440px,calc(100vh - 110px));overflow:auto;padding:12px;background:#dbeafe;border:1px solid #60a5fa;border-radius:14px;box-shadow:0 12px 40px #1e40af40}
         .panel-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.panel-header h2{margin:0}.settings{display:inline-flex;align-items:center;gap:5px;min-height:36px;padding:6px 9px;border:1px solid #93c5fd;border-radius:8px;background:#eff6ff;color:#1e40af;font-size:13px;font-weight:600;white-space:nowrap}.settings:hover{background:#bfdbfe}.settings:focus-visible{outline:2px solid #2563eb;outline-offset:2px}.settings{line-height:20px}.settings-icon{display:block;width:20px;height:20px;flex:0 0 20px}
         [hidden]{display:none!important}h2{color:#1e3a8a;font-size:16px;margin:4px 4px 12px}.prompt{display:block;text-align:left;width:100%;border:0;border-radius:8px;background:#eff6ff;margin-top:6px;padding:12px;color:#172554;overflow-wrap:anywhere}.prompt:hover,.prompt:focus-visible{background:#bfdbfe;outline-color:#2563eb}small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#475569;margin-top:4px}p{line-height:1.5;color:#334155;margin:8px 4px}
-      </style><button id="toggle" title="点击打开提示词 · 拖动调整位置" aria-label="打开提示词，可拖动调整位置" aria-expanded="false">✦</button><section id="panel" aria-label="提示词列表" hidden></section>`;
+      </style><button type="button" id="toggle" title="点击打开提示词 · 拖动调整位置" aria-label="打开提示词，可拖动调整位置" aria-expanded="false">✦</button><section id="panel" aria-label="提示词列表" hidden></section>`;
       panel = shadow.querySelector('#panel');
       const toggle = shadow.querySelector('#toggle');
       toggle.onclick = () => { if (suppressClick) { suppressClick = false; return; } panel.hidden = !panel.hidden; toggle.setAttribute('aria-expanded', String(!panel.hidden)); if (!panel.hidden) { renderList(); layout(); } };
       bindDrag(toggle);
+      // Keep extension clicks out of host-page delegated click handlers.
+      shadow.addEventListener('click', event => event.stopPropagation());
       shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-      document.documentElement.append(hostElement);
+      document.body.appendChild(hostElement);
+      listen(true);
       layout();
     }
     if (!panel.hidden) renderList();
@@ -79,7 +98,7 @@
       if (!drag || drag.id !== event.pointerId) return;
       if (drag.moved) {
         suppressClick = true;
-        chrome.storage.local.set({[positionKey]:position}).catch(error => {
+        extensionCall(chrome.storage.local, 'set', {[positionKey]:position}).catch(error => {
           button.title = '位置保存失败，请重试拖动';
           console.error(error);
         });
@@ -89,7 +108,6 @@
     };
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => button.addEventListener(type, finish));
   }
-  window.addEventListener('resize', layout);
   function close() { if (hostElement) { panel.hidden = true; shadow.querySelector('#toggle').setAttribute('aria-expanded', 'false'); } }
   function renderList() {
     panel.replaceChildren();
@@ -98,10 +116,12 @@
     const settings = document.createElement('button'); settings.className = 'settings';
     settings.type = 'button'; settings.setAttribute('aria-label', '设置'); settings.title = '打开提示词管理';
     settings.innerHTML = '<svg class="settings-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 1.72l-.12.89a2 2 0 0 1-.99 1.45l-.19.11a2 2 0 0 1-1.75.12l-.83-.33a2 2 0 0 0-2.46.85l-.22.38a2 2 0 0 0 .47 2.57l.71.55a2 2 0 0 1 .76 1.58v.22a2 2 0 0 1-.76 1.58l-.71.55a2 2 0 0 0-.47 2.57l.22.38a2 2 0 0 0 2.46.85l.83-.33a2 2 0 0 1 1.75.12l.19.11a2 2 0 0 1 .99 1.45l.12.89a2 2 0 0 0 2 1.72h.44a2 2 0 0 0 2-1.72l.12-.89a2 2 0 0 1 .99-1.45l.19-.11a2 2 0 0 1 1.75-.12l.83.33a2 2 0 0 0 2.46-.85l.22-.39a2 2 0 0 0-.47-2.57l-.71-.55a2 2 0 0 1-.76-1.58v-.21a2 2 0 0 1 .76-1.58l.71-.55a2 2 0 0 0 .47-2.57l-.22-.38a2 2 0 0 0-2.46-.85l-.83.33a2 2 0 0 1-1.75-.12l-.19-.11a2 2 0 0 1-.99-1.45l-.12-.89a2 2 0 0 0-2-1.72Z"/><circle cx="12" cy="12" r="3"/></svg><span>设置</span>';
-    settings.onclick = async () => {
+    settings.onclick = async event => {
+      event.preventDefault();
+      event.stopPropagation();
       settings.disabled = true;
       try {
-        const response = await chrome.runtime.sendMessage({type:'OPEN_PROMPT_MANAGER'});
+        const response = await extensionCall(chrome.runtime, 'sendMessage', {type:'OPEN_PROMPT_MANAGER'});
         if (!response?.ok) throw new Error('无法打开设置');
         close();
       } catch {
@@ -113,7 +133,7 @@
     header.append(heading, settings); panel.append(header);
     if (!store.prompts.length) { const empty = document.createElement('p'); empty.textContent = '暂无提示词。点击浏览器工具栏的插件图标添加。'; panel.append(empty); }
     for (const prompt of store.prompts) {
-      const button = document.createElement('button'); button.className = 'prompt'; button.textContent = prompt.name;
+      const button = document.createElement('button'); button.className = 'prompt'; button.type = 'button'; button.textContent = prompt.name;
       const preview = document.createElement('small'); preview.textContent = prompt.content; button.append(preview);
       button.title = prompt.content; button.onclick = () => insert(prompt.content); panel.append(button);
     }
@@ -133,7 +153,25 @@
       const current = window.getSelection();
       current.removeAllRanges();
       if (el === target && range && el.contains(range.commonAncestorContainer)) current.addRange(range);
-      else { const end = document.createRange(); end.selectNodeContents(el); end.collapse(false); current.addRange(end); }
+      else {
+        const end = document.createRange();
+        const leaf = el.matches('[data-slate-editor="true"]') ? el.querySelector('[data-slate-string], [data-slate-zero-width]') : null;
+        end.selectNodeContents(leaf || el); end.collapse(false); current.addRange(end);
+      }
+      // Slate owns both the DOM and its document model. Let its paste handler
+      // update selection, history and message state instead of modifying DOM.
+      if (el.matches('[data-slate-editor="true"]')) {
+        const clipboard = new DataTransfer();
+        clipboard.setData('text/plain', text);
+        const paste = new ClipboardEvent('paste', {bubbles:true, cancelable:true, composed:true, clipboardData:clipboard});
+        if (el.dispatchEvent(paste)) {
+          const message = document.createElement('p'); message.setAttribute('role', 'status');
+          message.textContent = '编辑器未接受插入，请使用手动粘贴。'; panel.append(message);
+          return;
+        }
+        close(); remember({composedPath: () => []});
+        return;
+      }
       // Native editing preserves rich-editor behavior and undo history where supported.
       if (!document.execCommand('insertText', false, text)) {
         const cursor = current.getRangeAt(0); cursor.deleteContents();
@@ -144,12 +182,11 @@
     }
     close(); remember({composedPath: () => []});
   }
-  document.addEventListener('pointerdown', event => { if (!event.composedPath().includes(hostElement)) close(); });
-  chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.store) { store = changes.store.newValue || structuredClone(DEFAULT_STORE); render(); } });
-  Promise.all([getStore(), chrome.storage.local.get(positionKey)]).then(([value, saved]) => {
+  chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.store) { store = changes.store.newValue || cloneStore(DEFAULT_STORE); safeRender(); } });
+  Promise.all([getStore(), extensionCall(chrome.storage.local, 'get', positionKey)]).then(([value, saved]) => {
     store = value;
     const last = saved[positionKey];
     if (last && Number.isFinite(last.x) && Number.isFinite(last.y)) position = last;
-    render();
-  }).catch(console.error);
+    safeRender();
+  }).catch(error => console.warn('[Prompt Manager] 无法初始化', error));
 })();

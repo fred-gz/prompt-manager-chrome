@@ -1,3 +1,16 @@
+// Callback support is retained by older Chromium-based extension hosts.
+function extensionCall(owner, method, ...args) {
+  return new Promise((resolve, reject) => {
+    try {
+      const result = owner[method](...args, value => {
+        const error = chrome.runtime && chrome.runtime.lastError;
+        if (error) reject(new Error(error.message)); else resolve(value);
+      });
+      if (result && typeof result.then === 'function') result.then(resolve, reject);
+    } catch (error) { reject(error); }
+  });
+}
+function cloneStore(value) { return JSON.parse(JSON.stringify(value)); }
 const DEFAULT_STORE = {
   defaultsVersion: 3,
   prompts: [],
@@ -11,9 +24,9 @@ const DEFAULT_STORE = {
   ]
 };
 async function getStore() {
-  const result = await chrome.storage.local.get('store');
-  if (!result.store) return structuredClone(DEFAULT_STORE);
-  const store = structuredClone(result.store);
+  const result = await extensionCall(chrome.storage.local, 'get', 'store');
+  if (!result.store) return cloneStore(DEFAULT_STORE);
+  const store = cloneStore(result.store);
   if ((store.defaultsVersion || 1) < 3) {
     const chatSite = store.websites.find(site => site.domain === 'chat.deepseek.com');
     if (chatSite) {
@@ -37,8 +50,11 @@ async function getStore() {
   store.defaultsVersion = Math.max(store.defaultsVersion || 1, 3);
   return store;
 }
-async function setStore(store) { await chrome.storage.local.set({store}); }
-function id() { return crypto.randomUUID(); }
+async function setStore(store) { await extensionCall(chrome.storage.local, 'set', {store}); }
+function id() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+}
 function normalizeDomain(value) {
   const raw = value.trim();
   if (!raw || /\s/.test(raw)) throw new Error('请输入有效域名，例如 example.com');
